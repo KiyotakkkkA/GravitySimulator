@@ -6,12 +6,17 @@ WINDOW_SIZE = [1200, 800]
 
 ABSOLUTE_GRAVITY = 0.6
 
+PREDICT = False
+SAVE = False
+
 colors = {
     "gray": [100, 100, 100],
     "white": [255, 255, 255],
     "black": [0, 0, 0],
     'light_pink': [252, 204, 204],
-    'light_blue': [204, 206, 252]
+    'light_blue': [204, 206, 252],
+    'red': [255, 0, 0],
+    'blue': [0, 0, 255]
 }
 
 
@@ -43,10 +48,20 @@ class PhysicsBody:
 class Circle(PhysicsBody):
     def __init__(self, x, y, mass, radius):
         super().__init__(x, y, mass)
+        self.needDelete = None
         self.radius = radius
+        self.predictedPos = None
+        self.maxRadius = radius
+        self.savedPos = None
 
     def draw(self, screen):
         pg.draw.circle(screen, colors['black'], (self.x, self.y), self.radius)
+
+        if self.predictedPos and PREDICT:
+            pg.draw.circle(screen, colors['red'], (int(self.predictedPos[0]), int(self.predictedPos[1])), self.radius, 1)
+
+        if self.predictedPos and SAVE:
+            pg.draw.circle(screen, colors['blue'], (int(self.savedPos[0]), int(self.savedPos[1])), self.radius, 1)
 
     def update(self, screen):
         self.move()
@@ -61,6 +76,22 @@ class Circle(PhysicsBody):
 
         if self.y - self.radius + 20 >= WINDOW_SIZE[1]:
             self.needDelete = True
+
+        self.save()
+
+    def predict(self, time):
+        return self.x, self.y + (self.Velocity2D[1] + self.gravity * time) * time
+
+    def save(self):
+        if not SAVE:
+            self.savedPos = [self.x, self.y, self.Velocity2D[0], self.Velocity2D[1], self.gravity]
+
+    def ret(self):
+        self.x = self.savedPos[0]
+        self.y = self.savedPos[1]
+        self.Velocity2D[0] = self.savedPos[2]
+        self.Velocity2D[1] = self.savedPos[3]
+        self.gravity = self.savedPos[4]
 
 
 class Floor:
@@ -97,7 +128,7 @@ class GravityResonator:
         self.y = y
         self.radius = radius
         self.reversed = 1
-        
+
     def draw(self, screen):
         if self.reversed < 0:
             pg.draw.circle(screen, colors['light_blue'], (self.x, self.y), self.radius)
@@ -112,11 +143,17 @@ class GravityResonator:
     def checkInteractions(self, el: Circle):
         distance = ((el.x - self.x) ** 2 + (el.y - self.y) ** 2) ** 0.5
         if self.radius >= distance - el.radius:
-            decreaseCoefficient = self.reversed * (self.radius - distance) / (self.radius+1)
+            decreaseCoefficient = self.reversed * (self.radius - distance) / (self.radius + 1)
             el.slowCoefficient = (1 - decreaseCoefficient) ** 8
             el.gravity = ABSOLUTE_GRAVITY * (1 - decreaseCoefficient) ** 8
+            if self.reversed == 1:
+                scale = 1 - ((self.radius - distance) / self.radius)
+            else:
+                scale = 1 + ((self.radius - distance) / self.radius)
+            el.radius = el.maxRadius * scale
         else:
             el.gravity = ABSOLUTE_GRAVITY
+            el.radius = el.maxRadius
 
 
 class Game:
@@ -131,6 +168,7 @@ class Game:
         self.Clock = pg.time.Clock()
 
     def run(self):
+        global PREDICT, SAVE
         array = []
         GR = GravityResonator(400, 400, 200)
         while self.running:
@@ -147,6 +185,13 @@ class Game:
                         invertWorld()
                     if keys[pg.K_i]:
                         GR.reversed = -GR.reversed
+                    if keys[pg.K_c]:
+                        PREDICT = not PREDICT
+                    if keys[pg.K_x]:
+                        SAVE = not SAVE
+                    if keys[pg.K_z]:
+                        for i in array:
+                            i.ret()
 
             keys = pg.key.get_pressed()
             if keys[pg.K_LEFT]:
@@ -166,6 +211,7 @@ class Game:
             self.window.fill(colors['white'])
             GR.update(self.window)
             for i in array:
+                i.predictedPos = i.predict(6)
                 i.update(self.window)
                 self.Floor.checkCollisions(i)
                 GR.checkInteractions(i)
